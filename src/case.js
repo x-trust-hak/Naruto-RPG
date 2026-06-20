@@ -13,6 +13,7 @@ const { getClanBuffs, getEffectiveStats, hpBar, chakraBar, resolveHit, enemyChoo
 
 const ADMIN_NUMBER = '2349155604141@s.whatsapp.net';
 const ADMIN_PLAIN  = '2349155604141';
+const ADMIN_LID = '108933272367319'; // your @lid in groups — confirm with !whoami below
 
 const BRAND = {
     billingSupportNumber: "2347041560392",
@@ -30,9 +31,16 @@ const VILLAGE_GROUPS = {
 
 const VILLAGES = ['Leaf', 'Sand', 'Mist', 'Cloud', 'Stone'];
 
-function isAdmin(senderJid) {
+/*function isAdmin(senderJid) {
     return senderJid === ADMIN_NUMBER ||
            senderJid.replace('@s.whatsapp.net','').replace('@lid','') === ADMIN_PLAIN;
+}*/
+
+function isAdmin(senderJid) {
+    const stripped = senderJid.replace('@s.whatsapp.net','').replace('@lid','');
+    return senderJid === ADMIN_NUMBER ||
+           stripped === ADMIN_PLAIN ||
+           stripped === ADMIN_LID;
 }
 
 // Find a player by in-game username (preferred — works regardless of @lid/number)
@@ -242,6 +250,10 @@ module.exports = async (conn, from, senderJid, cleanText, phoneNumber, pushName 
         if (!command) return;
 
         switch (command) {
+
+                case 'whoami': {
+    return await conn.sendMessage(from, { text: `🆔 Your ID: ${senderJid}` });
+                }
 
             // ════════════════════════════════════════════════════════════════
             // REGISTRATION
