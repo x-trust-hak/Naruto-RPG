@@ -39,24 +39,24 @@ function prepareImagePayload(imageName, caption) {
 // Each character can have multiple images for different moods/situations
 const CHARACTER_IMAGES = {
     naruto:     ['naruto', 'naruto2'],
-    sasuke:     ['welcome'],     // placeholder until you send Sasuke image
-    sakura:     ['welcome'],
-    kakashi:    ['welcome'],
-    itachi:     ['akatsuki'],
+    sasuke:     ['sasuke', 'sasuke_curse', 'sasuke_akatsuki', 'sasuke_chidori', 'sasuke_sword', 'sasuke_calm', 'sasuke_rinnegan'],
+    sakura:     ['sakura', 'sakura_strength', 'sakura_rage', 'sakura_happy', 'sakura_serious'],
+    kakashi:    ['kakashi', 'kakashi_jutsu', 'kakashi_calm', 'kakashi_action', 'kakashi_relaxed', 'kakashi_young'],
+    itachi:     ['itachi', 'itachi_calm', 'itachi_angry', 'itachi_throne', 'itachi_smirk', 'itachi_moon'],
     gaara:      ['gaara4', 'gaara3', 'gaara5'],
     obito:      ['obito', 'obito_kid'],
     minato:     ['welcome'],
-    pain:       ['akatsuki'],
+    pain:       ['pain', 'pain_power', 'pain_action', 'pain_descent', 'pain_battle', 'pain_akatsuki'],
     kisame:     ['akatsuki'],
     zabuza:     ['welcome'],
     killer_bee: ['welcome'],
     deidara:    ['akatsuki'],
-    sasori:     ['akatsuki'],
+    sasori:     ['sasori', 'sasori_duo', 'sasori_serious', 'sasori_attitude', 'sasori_scorpion'],
     neji:       ['welcome'],
     rock_lee:   ['welcome'],
-    jiraiya:    ['welcome'],
-    tsunade:    ['welcome'],
-    konan:      ['akatsuki'],
+    jiraiya:    ['jiraiya', 'jiraiya_serious', 'jiraiya_chibi', 'jiraiya_sage', 'jiraiya_calm'],
+    tsunade:    ['tsunade', 'tsunade_happy', 'tsunade_hokage', 'tsunade_angry', 'tsunade_smirk'],
+    konan:      ['konan', 'konan_jutsu', 'konan_wings', 'konan_rain', 'konan_calm'],
     raikage:    ['welcome'],
 };
 
