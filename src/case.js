@@ -5,6 +5,7 @@ const Clan = require('../models/Clan');
 const PromoCode = require('../models/PromoCode');
 const { prepareImagePayload, prepareImagePayloadFromBuffer, getCharacterImage, getBattleImage, VILLAGE_IMAGES } = require('./mediaEngine');
 const { renderBattleCard, renderProfileCard } = require('./battleRender');
+const { CHARACTERS, FREE_CHARACTERS, xpForLevel, getCharacter } = require('./characters');
 const { buttonMessage, listMessage, charShopCard, battleButtons } = require('./uiHelpers');
 const { CANON_CLANS, findCanonClan, rollCustomClanBuff, describeBuffs } = require('./clans');
 const { getMonster, RANK_LABELS, RANK_MIN_LEVEL } = require('./monsters');
