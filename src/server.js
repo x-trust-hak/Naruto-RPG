@@ -1,0 +1,205 @@
+// src/server.js
+require('dotenv').config();
+const express = require('express');
+const http    = require('http');
+const { Server } = require('socket.io');
+const path    = require('path');
+const mongoose = require('mongoose');
+const { startBot, restoreAllSessions, connections } = require('./bot');
+const User    = require('../models/User');
+
+const app    = express();
+const server = http.createServer(app);
+const io     = new Server(server);
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
+
+// ── MongoDB Connection ────────────────────────────────────────────────────────
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/narutorpg')
+    .then(async () => {
+        console.log('🍃 MongoDB Connected.');
+        startPassiveRegenLoop();
+        // ✅ FIX: Restore previously-paired sessions on every server boot
+        await restoreAllSessions();
+    })
+    .catch(err => console.error('MongoDB connection error:', err));
+
+// ── Passive Regen Loop ────────────────────────────────────────────────────────
+function startPassiveRegenLoop() {
+    console.log('⏱️ Passive Regen Engine started.');
+    setInterval(async () => {
+        try {
+            const players = await User.find({ registrationStep: 'COMPLETED' });
+            for (const player of players) {
+                let updated = false;
+                if (player.chakra.current < player.chakra.max) {
+                    player.chakra.current = Math.min(player.chakra.max, player.chakra.current + 10);
+                    updated = true;
+                }
+                if (player.hp.current < player.hp.max) {
+                    player.hp.current = Math.min(player.hp.max, player.hp.current + 25);
+                    updated = true;
+                }
+                if (updated) await player.save();
+            }
+        } catch (err) {
+            console.error('Passive regen error:', err);
+        }
+    }, 60000);
+}
+
+// ── Socket.io ─────────────────────────────────────────────────────────────────
+const startTime = Math.floor(Date.now() / 1000);
+
+io.on('connection', (socket) => {
+    console.log('🌐 Frontend client connected');
+
+    const statsInterval = setInterval(() => {
+        // Only count sockets that are fully open (readyState 1 = OPEN)
+        const activeSessions = [...connections.values()].filter(
+            c => c?.ws?.readyState === 1
+        ).length;
+        socket.emit('stats', {
+            active: activeSessions,
+            max: 100,
+            uptime: Math.floor(Date.now() / 1000) - startTime,
+            maintenanceMode: false
+        });
+    }, 3000);
+
+    socket.on('request-code', async (phoneNumber) => {
+        if (!phoneNumber) {
+            return socket.emit('error', 'Phone number is required.');
+        }
+
+        const cleanPhone = phoneNumber.replace('+', '').replace(/\s/g, '').trim();
+
+        if (!/^\d{7,15}$/.test(cleanPhone)) {
+            return socket.emit('error', 'Invalid phone number format. Use country code + number (e.g. 2347041560392).');
+        }
+
+        // ✅ FIX: If this phone is already connected, tell the frontend immediately
+        if (connections.has(cleanPhone)) {
+            const existing = connections.get(cleanPhone);
+            if (existing?.ws?.readyState === 1) {
+                return socket.emit('connected', 'Session already active.');
+            }
+            // Dead socket lingering — remove it so startBot can create a fresh one
+            connections.delete(cleanPhone);
+        }
+
+        try {
+            await startBot(cleanPhone, socket);
+        } catch (err) {
+            console.error('[SERVER] startBot error:', err);
+            socket.emit('error', 'Failed to start pairing. Please try again.');
+        }
+    });
+
+    socket.on('disconnect', () => {
+        clearInterval(statsInterval);
+        console.log('🌐 Frontend client disconnected');
+    });
+});
+
+// ── Health Endpoint ───────────────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+    res.json({ status: 'alive', usersOnline: connections.size });
+});
+
+// ── Runtime Stats (global, exported for !runtime command) ────────────────────
+global.botRuntime = {
+    startTime: Date.now(),
+    messagesHandled: 0,
+    battlesStarted: 0,
+    missionsRun: 0,
+    pvpFights: 0,
+    raidsFought: 0,
+    summonsPulled: 0,
+    errors: 0,
+};
+
+// ── Arena Season Auto-Reset ──────────────────────────────────────────────────
+// Checks at midnight each day if it's the last day of the month.
+// If so, ends the season and distributes rewards.
+let lastSeasonCheck = '';
+
+async function checkSeasonReset() {
+    try {
+        const { getCurrentSeason, endSeason } = require('./arenaSeason');
+        const User = require('../models/User');
+        const now = new Date();
+        const today = now.toISOString().slice(0, 10);
+        if (lastSeasonCheck === today) return;
+        lastSeasonCheck = today;
+
+        const season = getCurrentSeason();
+        // If today is the last day of the month, end the season
+        if (season.daysLeft <= 1 && now.getHours() >= 23) {
+            console.log('[SEASON] Ending season:', season.name);
+            await endSeason(User, null, null);
+            console.log('[SEASON] Season ended and reset complete');
+        }
+    } catch (err) {
+        console.error('[SEASON] Auto-reset error:', err.message);
+    }
+}
+
+// Run season check every hour
+setInterval(checkSeasonReset, 60 * 60 * 1000);
+
+// ── Village War Auto-Expiry ────────────────────────────────────────────────
+// Checks every 30 minutes for wars that have exceeded their 7-day duration.
+async function checkWarExpiry() {
+    try {
+        const { activeWars, endWar, pendingWarRequests, WAR_KAGE_COST } = require('./villageWar');
+        const now = Date.now();
+
+        // Expire active wars past their 7-day duration
+        for (const war of [...activeWars.values()]) {
+            if (war.status === 'active' && now >= war.endTime) {
+                console.log(`[WAR] Auto-ending expired war: ${war.attacker} vs ${war.defender}`);
+                const result = endWar(war);
+                console.log(`[WAR] Result: ${result.tie ? 'Tie' : `Winner: ${result.winner}`}`);
+            }
+        }
+
+        // Expire unanswered war requests past 24h, refund the attacker Kage
+        const User = require('../models/User');
+        for (const [village, req] of [...pendingWarRequests.entries()]) {
+            if (now >= req.expiresAt) {
+                console.log(`[WAR] Expiring unanswered request: ${req.attackerVillage} -> ${req.defenderVillage}`);
+                pendingWarRequests.delete(village);
+                try {
+                    const atkKage = await User.findOne({ village: req.attackerVillage, isKage: true });
+                    if (atkKage) {
+                        atkKage.ryo = (atkKage.ryo || 0) + WAR_KAGE_COST;
+                        await atkKage.save();
+                        console.log(`[WAR] Refunded ${WAR_KAGE_COST} Ryo to ${atkKage.username}`);
+                    }
+                } catch (refundErr) {
+                    console.error('[WAR] Refund error:', refundErr.message);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[WAR] Auto-expiry error:', err.message);
+    }
+}
+
+setInterval(checkWarExpiry, 30 * 60 * 1000);
+
+// ── Self-Ping (Render free tier keep-alive) ───────────────────────────────────
+if (process.env.SELF_URL) {
+    setInterval(() => {
+        const https = require('https');
+        https.get(`${process.env.SELF_URL}/health`, res => res.resume())
+             .on('error', e => console.log('Heartbeat missed:', e.message));
+    }, 180000);
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+});
